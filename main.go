@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Config represents the mail YAML configuration
+// Config represents the main YAML configuration
 type Config struct {
 	Rabbit struct {
 		ConnectionString string   `yaml:"connectionString"`
