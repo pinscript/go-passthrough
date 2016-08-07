@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -25,7 +25,7 @@ type Config struct {
 		Args string `yaml:"args"`
 	}
 
-	Http struct {
+	HTTP struct {
 		Address string `yaml:"address"`
 	}
 }
@@ -33,6 +33,7 @@ type Config struct {
 var (
 	config Config
 	waiter chan (bool)
+	stats  map[string]int64
 )
 
 // loads config.yml into the global config object
@@ -78,7 +79,7 @@ func invokeCommand(delivery amqp.Delivery) error {
 
 // http status endpoint
 func statusHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "OK")
+	json.NewEncoder(w).Encode(stats)
 }
 
 func main() {
@@ -97,9 +98,18 @@ func main() {
 		log.Fatalf("error: could not open channel: %s\n", err)
 	}
 
-	// start http interface
+	stats = make(map[string]int64)
+	stats["ok"] = 0
+	stats["errors"] = 0
+
+	// start HTTP endpoint
 	http.HandleFunc("/status", statusHandler)
-	http.ListenAndServe(config.Http.Address, nil)
+	go func() {
+		log.Printf("Http endpoint accepting requests on %s\n", config.HTTP.Address)
+		if err := http.ListenAndServe(config.HTTP.Address, nil); err != nil {
+			log.Printf("warning: could not start HTTP endpoint (specified address: %s)\n", config.HTTP.Address)
+		}
+	}()
 
 	// start a coroutine for each queue
 	for _, queue := range config.Rabbit.Queues {
@@ -112,14 +122,16 @@ func main() {
 
 		go func() {
 			for m := range msgs {
-				fmt.Printf("Received message: %+v\n", m)
+				log.Printf("Received message: %+v\n", m)
 
 				if err = invokeCommand(m); err == nil {
 					log.Printf("Message processed, acking")
 					m.Ack(false)
+					stats["ok"]++
 				} else {
 					// todo: send to error queue
 					log.Printf("Command handler returned error: %s\n", err)
+					stats["errors"]++
 				}
 			}
 		}()
