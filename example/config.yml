@@ -6,3 +6,6 @@ rabbit:
 command:
   proc: php
   args: -f handle.php
+
+http:
+  address: :8082

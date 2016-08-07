@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os/exec"
 	"strings"
 
@@ -23,6 +24,10 @@ type Config struct {
 		Proc string `yaml:"proc"`
 		Args string `yaml:"args"`
 	}
+
+	Http struct {
+		Address string `yaml:"address"`
+	}
 }
 
 var (
@@ -30,6 +35,7 @@ var (
 	waiter chan (bool)
 )
 
+// loads config.yml into the global config object
 func loadConfig() {
 	buffer, err := ioutil.ReadFile("config.yml")
 	if err != nil {
@@ -42,6 +48,7 @@ func loadConfig() {
 	}
 }
 
+// invokes the command handler with the specified message
 func invokeCommand(delivery amqp.Delivery) error {
 	args := strings.Split(config.Command.Args, " ")
 	cmd := exec.Command(config.Command.Proc, args...)
@@ -69,6 +76,11 @@ func invokeCommand(delivery amqp.Delivery) error {
 	return cmd.Wait()
 }
 
+// http status endpoint
+func statusHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "OK")
+}
+
 func main() {
 	log.Println("Passthrough started")
 	loadConfig()
@@ -84,6 +96,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: could not open channel: %s\n", err)
 	}
+
+	// start http interface
+	http.HandleFunc("/status", statusHandler)
+	http.ListenAndServe(config.Http.Address, nil)
 
 	// start a coroutine for each queue
 	for _, queue := range config.Rabbit.Queues {
